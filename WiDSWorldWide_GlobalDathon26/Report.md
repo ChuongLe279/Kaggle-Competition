@@ -1,0 +1,12 @@
+# GBSA + LightGBM Version Summary
+
+| Version | Summary |
+| --- | --- |
+| **Version 1** | Very basic **GBSA baseline**. It loads the data, does simple one-hot encoding for `low_temporal_resolution_0_5h`, splits train/validation using `train_test_split`, trains one `GradientBoostingSurvivalAnalysis` model, checks C-index on the validation split, then predicts survival probabilities for 12h, 24h, 48h, and 72h. |
+| **Version 2** | First serious **OOF GBSA version**. It adds feature engineering, uses `StratifiedKFold` instead of one train/validation split, uses multiple seeds, applies target encoding inside each fold, trains GBSA fold by fold, creates OOF predictions, calculates C-index, manual Brier scores, weighted Brier, hybrid score, and creates submission from averaged test predictions. |
+| **Version 3** | First full **GBSA + LightGBM blend** version. It separates GBSA and LightGBM pipelines. GBSA produces survival-based OOF predictions. LightGBM trains separate binary classifiers for `p12`, `p24`, `p48`, and `p72`. It also uses chain-classifier logic, where previous horizon predictions are added as features for later horizons. Then it calibrates LightGBM with logistic regression and searches for the best blending alpha between GBSA and LGBM for each horizon. |
+| **Version 4** | Improved **GBSA + LightGBM fixed-blend** version. GBSA is made stronger with `n_estimators=4000` and `learning_rate=0.003`. LightGBM gets different parameter configs for each horizon. It also adds IPCW-style weights for LightGBM. Instead of alpha search, it uses fixed blending weights: mostly GBSA for 12h and 24h, more LightGBM for 48h, and GBSA for 72h. It also forces `p72 = 1.0` as a “free gain” trick. |
+| **Version 5** | More careful **IPCW + fold-level evaluation** version. It keeps the GBSA + LightGBM blend idea from v4, but tries to make evaluation more correct. GBSA is trained with IPCW sample weights. It calculates fold-level C-index, Brier, and hybrid score inside CV. LightGBM learning rate is lowered to `0.01` and `n_estimators` increased to `1000`. The hybrid score print is commented out because you noticed the evaluation might be wrong. |
+| **Version 6** | Simplified **GBSA-only ensemble** version. It removes LightGBM, calibration, and blending. Instead, it focuses on many GBSA configurations across multiple seeds and folds. It creates OOF/test predictions from the GBSA ensemble only, enforces monotonicity, manually computes C-index/Brier/hybrid score, sets `p72 = 1.0`, and submits GBSA predictions. |
+
+
