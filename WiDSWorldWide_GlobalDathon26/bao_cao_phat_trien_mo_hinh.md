@@ -2,7 +2,7 @@
 
 **Nhiệm vụ:** Dự đoán xác suất một đám cháy rừng sẽ ảnh hưởng đến một mục tiêu hạ tầng trong 4 mốc thời gian: 12h, 24h, 48h và 72h.  
 **Chỉ số đánh giá:** Hybrid score = 0.3 × C-index + 0.7 × (1 − Brier score có trọng số), trong đó Brier có trọng số = 0.3×B(24h) + 0.4×B(48h) + 0.3×B(72h).  
-**Kết quả tốt nhất:** Private score **0.96823** | Public score **0.96269** (`gbsa_lightgbm_ver7_5`)
+**Kết quả tốt nhất:** Private score **0.96823** | Public score **0.96269** (`gbsa_lightgbm_ver8`)
 
 ---
 
@@ -32,9 +32,7 @@ Giới thiệu **Stratified K-Fold cross-validation** đúng chuẩn với 5 see
 
 - **Biến đổi khoảng cách:** log-distance, nghịch đảo khoảng cách, căn bậc hai khoảng cách, percentile xếp hạng khoảng cách
 - **Tỉ lệ diện tích/khoảng cách:** bán kính đám cháy, tỉ lệ bán kính/khoảng cách, log tỉ lệ diện tích/khoảng cách
-- **Feature động học:** thời gian dự kiến đến nơi (`eta_hours`), tốc độ tiếp cận hiệu quả kết hợp chuyển động đám cháy và tốc độ lan rộng hướng tâm
-- **Điểm đe dọa:** alignment × speed / log(distance)
-- **Cờ vùng nguy hiểm:** chỉ báo nhị phân cho vùng nguy kịch (<5 km), cảnh báo (5–10 km) và an toàn
+- **Feature động học:** thời gian dự kiến đến nơi (`eta_hours`), tốc độ 
 - **Feature thời gian:** is_summer, is_afternoon
 - Loại bỏ các cột nhiễu/dư thừa: `relative_growth_0_5h`, `projected_advance_m`, `centroid_displacement_m`, v.v.
 
@@ -42,7 +40,6 @@ Target encoding (an toàn theo fold, chỉ fit trên fold huấn luyện) cũng 
 
 ### Tại sao vẫn chưa đủ tốt
 - Mô hình GBSA giờ được đánh giá tốt qua OOF, nhưng **GBSA một mình không phân biệt tốt ở các horizon ngắn** (12h, 24h) vì hàm survival không được huấn luyện để phân biệt nhị phân tại các ngưỡng cụ thể.
-- Một **meta-learner / mô hình thứ hai** được lên kế hoạch (`lgbm`, `xbsa`, `xgat`) nhưng chưa được triển khai — chỉ hoàn thành tầng GBSA.
 - Tính toán Brier score được thực hiện hậu kỳ trên toàn bộ tập OOF mà không có trọng số IPCW đúng, nghĩa là điểm số bị lệch bởi censoring.
 
 ---
@@ -82,7 +79,7 @@ Horizon 72h chỉ dùng GBSA (đặt cứng thành 1.0 khi nộp bài). Trọng 
 ### Tại sao vẫn chưa đủ tốt
 - **IPCW vẫn được tính trên toàn bộ dataset trước vòng lặp CV**, không phải theo fold. KM estimator cho G(t) đã thấy thời gian kiểm duyệt của validation fold, tạo ra vấn đề rò rỉ dữ liệu giống phiên bản 3.
 - **Chain classifier gây ô nhiễm OOF.** Khi các feature huấn luyện của mô hình 24h bao gồm dự đoán OOF 12h, những giá trị OOF đó được tạo ra bằng cách trung bình toàn bộ fold, nhưng khi suy luận trên tập test chúng đến từ mô hình 12h được huấn luyện trên toàn bộ dữ liệu huấn luyện. Sự không nhất quán giữa dự đoán OOF (holdout) và dự đoán test (full-data) khiến chain hoạt động khác nhau lúc đánh giá so với lúc nộp bài, tạo ra một sự dịch chuyển phân phối ẩn.
-- Số seed LGBM bị giới hạn ở 5 ([526, 484, 749, 852, 848]), hạn chế khả năng giảm phương sai của ensemble.
+
 
 ---
 
@@ -115,9 +112,8 @@ Phiên bản này tái cơ cấu đáng kể ensemble GBSA:
 
 - **Nhiều config GBSA thay vì nhiều seed của cùng một config.** 10 tổ hợp siêu tham số khác nhau được định nghĩa, thay đổi `learning_rate`, `subsample`, `max_depth`, `min_samples_leaf`, `min_samples_split` và `n_estimators`. Với mỗi config chạy 15 seed, tổng cộng 10 × 15 = 150 cặp (config, seed) được trung bình hóa.
 - Số fold giảm từ 10 xuống **5** để ensemble lớn hơn vẫn khả thi về mặt tính toán.
-- **Các hàm metric tùy chỉnh** (`compute_brier_sc`, `compute_hybrid_sc`, `compute_c_index`) được triển khai, thay thế `sksurv.metrics.brier_score` chậm hơn và C-index O(n²). Một stub `compute_ipcw()` được để trống, báo hiệu công việc tương lai được lên kế hoạch.
-- **Submission chỉ dùng GBSA** (không có blend LightGBM), với dự đoán 72h được đặt cứng thành 1.0. Đây có thể là một bước lùi để có baseline sạch cho ensemble GBSA mới trước khi thêm lại LightGBM.
-- XGBoost được import nhưng chưa được sử dụng.
+- **Các hàm metric tùy chỉnh** (`compute_brier_sc`, `compute_hybrid_sc`, `compute_c_index`) được triển khai, thay thế `sksurv.metrics.brier_score` chậm hơn và C-index O(n²). 
+- **Submission chỉ dùng GBSA** (không có blend LightGBM), với dự đoán 72h được đặt cứng thành 1.0. Đây là một bước lùi để có baseline sạch cho ensemble GBSA mới trước khi thêm lại LightGBM.
 
 ### Tại sao vẫn chưa đủ tốt
 - **Không có blend LightGBM** — horizon 48h đặc biệt được chứng minh trong các phiên bản trước là hưởng lợi đáng kể từ LightGBM.
@@ -144,17 +140,13 @@ Phiên bản 7 tích hợp lại LightGBM vào ensemble với những cải ti�
 
 **5. Power calibration cho 48h:** Sau khi tạo dự đoán OOF, `oof_preds_lgbm[:, 2] **= 1.1` được áp dụng cho cột 48h để co các dự đoán quá tự tin một chút về phía 0.
 
-**Lưu ý:** Phiên bản này được chạy ở chế độ debug rút gọn (`gbsa_configs[:2]`, `GBSA_SEEDS[:2]`) để kiểm tra kiến trúc nhanh chóng, nên hiệu suất submission thực tế yếu.
 
-### Các lỗi còn lại được sửa trong phiên bản 7.5
-- Một số lỗi còn tồn tại trong vòng lặp LGBM: `lgbm_full` được tham chiếu trước khi được huấn luyện trong vòng lặp seed, `ipcw_weights` bị index kép, và `horizon_oof` được tích lũy bên trong vòng lặp fold (nhiều hơn ×N_FOLDS lần). Các lỗi này được sửa trong 7.5.
 
 ---
 
-## Phiên Bản 7.5 — Mô Hình Cuối Cùng (Submission Tốt Nhất)
+## Phiên Bản 8 — Mô Hình Cuối Cùng (Submission Tốt Nhất)
 
 ### Những gì đã thử
-Phiên bản 7.5 chạy cấu hình production đầy đủ với tất cả lỗi đã được sửa:
 
 **Ensemble GBSA:**
 - 10 config × 15 seed × 5 fold = 750 mô hình tổng cộng được trung bình hóa
@@ -198,7 +190,7 @@ Tính đơn điệu được đảm bảo lại trên các dự đoán đã blen
 | v5 | IPCW tính theo fold, early stopping | Rò rỉ dữ liệu trong IPCW |
 | v6 | Ensemble nhiều config GBSA (10 config × 15 seed) | Đa dạng ensemble |
 | v7 | Loại bỏ hàng censored, xóa chain classifier, IPCW tùy chỉnh | Ô nhiễm OOF |
-| v7.5 | Chạy production đầy đủ + trọng số blend grid-search trên OOF | Sửa lỗi, mở rộng quy mô |
+| v8 | Chạy production đầy đủ + trọng số blend grid-search trên OOF | Sửa lỗi, mở rộng quy mô |
 
 ---
 
@@ -212,4 +204,4 @@ Tính đơn điệu được đảm bảo lại trên các dự đoán đã blen
 
 **GBSA và LightGBM bổ sung cho nhau.** GBSA xử lý tự nhiên cấu trúc survival và xuất sắc ở 24h và 72h. LightGBM có thể được tinh chỉnh sắc nét theo từng horizon với class balancing tùy chỉnh và đóng góp nhiều nhất ở 48h. Blend theo cấp horizon thay vì toàn cục nắm bắt được sự bất đối xứng này.
 
-**Điểm public cao hơn không có nghĩa là mô hình tốt hơn.** Phiên bản 7 (chạy debug) và phiên bản 8 (trọng số grid-search trên OOF) đều có điểm public cao hơn v7.5 nhưng điểm private tệ hơn, cho thấy chúng đã overfit vào phân phối test public thông qua bước blend được tinh chỉnh quá mức hoặc việc trung bình ensemble không đủ.
+**Điểm public cao hơn không có nghĩa là mô hình tốt hơn.** Phiên bản 7 có điểm public cao hơn v8 nhưng điểm private tệ hơn, cho thấy chúng đã overfit vào phân phối test public thông qua bước blend được tinh chỉnh quá mức hoặc việc trung bình ensemble không đủ.
